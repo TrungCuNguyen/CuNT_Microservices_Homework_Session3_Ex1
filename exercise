@@ -1,0 +1,112 @@
+
+## 1. Bản thiết kế chi tiết các thực thể (Entities & Databases)
+
+Mỗi service quản lý cơ sở dữ liệu (Database) riêng biệt, hoàn toàn độc lập.
+
+```
++------------------------+      +------------------------+      +------------------------+
+|    Customer Service    |      |    Product Service     |      |     Order Service      |
+|  (customer_db)         |      |  (product_db)          |      |  (order_db)            |
++------------------------+      +------------------------+      +------------------------+
+| Customer               |      | Product                |      | Order                  |
+| - id (PK)              |      | - id (PK)              |      | - id (PK)              |
+| - fullName             |      | - name                 |      | - customerId (FK Ref)  |
+| - email                |      | - price                |      | - orderDate            |
+| - password             |      | - stockQuantity        |      | - totalAmount          |
+| - address              |      | - description          |      | - status               |
++------------------------+      +------------------------+      +------------------------+
+
+```
+
+### Chi tiết thuộc tính từng thực thể:
+
+1. **Customer Service (`customer_db`)**
+
+* `id`: `Long` / `UUID` (Primary Key)
+
+
+* `fullName`: `String`
+
+* `email`: `String` (Unique)
+
+
+* `password`: `String` (Mã hóa Hash)
+
+
+* `address`: `String`
+
+
+
+2. **Product Service (`product_db`)**
+
+* `id`: `Long` / `UUID` (Primary Key)
+
+
+* `name`: `String`
+
+* `price`: `BigDecimal` / `Double`
+
+* `stockQuantity`: `Integer`
+
+* `description`: `String`
+
+
+
+3. **Order Service (`order_db`)**
+
+* `id`: `Long` / `UUID` (Primary Key)
+
+
+* `customerId`: `Long` / `UUID` (Tham chiếu ID tới Customer Service)
+
+
+* `orderDate`: `LocalDateTime`
+
+* `totalAmount`: `BigDecimal` / `Double`
+
+* `status`: `String` / `Enum` (VD: `PENDING`, `PAID`, `CANCELLED`)
+
+
+
+
+
+---
+
+## 2. Giải thích lý do `Order` chỉ lưu `customerId` mà không lưu cả đối tượng `Customer`
+
+Trong kiến trúc Microservices, việc `Order` chỉ lưu `customerId` là một nguyên tắc thiết kế quan trọng vì các lý do sau:
+
+### 1. Đảm bảo tính độc lập dữ liệu (Database per Service)
+
+* Mỗi service sở hữu và quản lý hoàn toàn Database của riêng mình.
+
+
+* Nếu lưu toàn bộ đối tượng `Customer` trong `Order`, bảng `Order` trong `order_db` sẽ phải lưu thêm các thông tin như `fullName`, `email`, `password`, `address`... Điều này tạo ra **sự trùng lặp dữ liệu (Data Redundancy)** giữa 2 database riêng biệt.
+
+### 2. Tránh phụ thuộc mã nguồn và giảm liên kết (Loose Coupling)
+
+* Không dùng chung code hay thư viện entity giữa các module. Nếu `Order` giữ quan hệ tham chiếu trực tiếp (như `@ManyToOne Customer customer` trong JPA), hai project sẽ bị phụ thuộc chặt chẽ vào mã nguồn của nhau (Tight Coupling).
+
+
+* Việc chỉ lưu `customerId` giúp `Order Service` hoàn toàn đứng độc lập và dễ dàng nâng cấp, deploy riêng biệt.
+
+
+
+### 3. Đảm bảo tính nhất quán và nguyên tắc single source of truth
+
+* Thông tin khách hàng (địa chỉ, email, tên) có thể thay đổi theo thời gian.
+* Nếu thông tin khách hàng cập nhật ở `Customer Service`, dữ liệu lưu nhúng trong `Order Service` sẽ bị lỗi thời (Stale Data), trừ khi phải thực hiện đồng bộ phức tạp giữa các service.
+* Lưu `customerId` giúp đảm bảo `Customer Service` luôn là nguồn dữ liệu chuẩn duy nhất (Single Source of Truth) cho thông tin người dùng.
+
+### 4. An toàn thông tin và bảo mật (Security & Data Isolation)
+
+* Thông tin khách hàng chứa thông tin nhạy cảm (như `password` mã hóa, lịch sử email...).
+
+
+* `Order Service` chỉ cần biết đơn hàng đó thuộc về ai (`customerId`), không cần biết hoặc lưu trữ các thông tin bảo mật của tài khoản khách hàng.
+
+
+
+### 5. Giao tiếp giữa các Service khi cần thiết
+
+* Khi `Order Service` cần hiển thị thông tin khách hàng trên hóa đơn hay giao diện, nó sẽ thực hiện gọi API (REST API / gRPC) hoặc qua Message Broker (Kafka/RabbitMQ) sang `Customer Service` bằng `customerId` để lấy thông tin cần thiết tại thời điểm đó.
